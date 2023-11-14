@@ -1,10 +1,92 @@
 mod colors;
 
+use std::cmp::Ordering;
 use bevy::prelude::*;
 use itertools::Itertools;
 use rand::prelude::IteratorRandom;
 const TILE_SIZE: f32 = 40.0;
 const TILE_SPACER: f32 = 10.0;
+
+enum BoardShift {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+#[derive(Component)]
+struct Board {
+    size: u8,
+    physical_size: f32,
+}
+
+#[derive(Component)]
+struct Positon {
+    x: u8,
+    y: u8,
+}
+
+#[derive(Component)]
+struct Points {
+    value: u32,
+}
+
+#[derive(Component)]
+struct TileText;
+
+#[derive(Resource)]
+struct FontSpec {
+    family: Handle<Font>,
+}
+
+impl FromWorld for FontSpec {
+    fn from_world(world: &mut World) -> Self {
+        let asset_server = world
+            .get_resource_mut::<AssetServer>()
+            .unwrap();
+        FontSpec { family: asset_server.load("fonts/FiraSans-Bold.ttf") }
+    }
+}
+
+impl Positon {
+    fn new(x: u8, y: u8) -> Self {
+        Self { x, y }
+    }
+}
+
+impl TryFrom<&KeyCode> for BoardShift {
+    type Error = &'static str;
+
+    fn try_from(value: &KeyCode) -> Result<Self, Self::Error> {
+        match value {
+            KeyCode::W => Ok(BoardShift::Up),
+            KeyCode::A => Ok(BoardShift::Left),
+            KeyCode::S => Ok(BoardShift::Down),
+            KeyCode::D => Ok(BoardShift::Right),
+            _ => Err("Invalid keycode"),
+        }
+    }
+}
+
+impl Board {
+    fn new(size: u8) -> Self {
+        let physical_size = f32::from(size) * TILE_SIZE + f32::from(size + 1) * TILE_SPACER;
+        Self {
+            size,
+            physical_size,
+        }
+    }
+
+    fn cell_position_to_physical(&self, pos: u8) -> f32 {
+        let offset = -self.physical_size / 2.0 + 0.5 * TILE_SIZE;
+
+        offset + f32::from(pos) * TILE_SIZE + f32::from(pos + 1) * TILE_SPACER
+    }
+
+    fn size(&self) -> Vec2 {
+        Vec2::new(self.physical_size, self.physical_size)
+    }
+}
 
 fn main() {
     App::new()
@@ -21,7 +103,7 @@ fn main() {
             Startup,
             (setup, spawn_board, apply_deferred, spawn_tile).chain(),
         )
-        .add_systems(Update, render_tile_points)
+        .add_systems(Update, (render_tile_points, board_shift))
         .run()
 }
 
@@ -119,62 +201,38 @@ fn render_tile_points(mut texts: Query<&mut Text, With<TileText>>, tiles: Query<
     }
 }
 
-#[derive(Component)]
-struct Points {
-    value: u32,
-}
+fn board_shift(
+    input: Res<Input<KeyCode>>,
+    mut tiles: Query<(Entity, &mut Positon, &mut Points)>
+) {
+    
+    let shift_direction = input.get_just_pressed().find_map(
+        |key_code| BoardShift::try_from(key_code).ok(),
+    );
 
-#[derive(Component)]
-struct TileText;
+    match shift_direction {
+        Some(BoardShift::Left) => {
+            dbg!("Left");
 
-#[derive(Component)]
-struct Positon {
-    x: u8,
-    y: u8,
-}
-
-#[derive(Resource)]
-struct FontSpec {
-    family: Handle<Font>,
-}
-
-impl FromWorld for FontSpec {
-    fn from_world(world: &mut World) -> Self {
-        let asset_server = world
-            .get_resource_mut::<AssetServer>()
-            .unwrap();
-        FontSpec { family: asset_server.load("fonts/FiraSans-Bold.ttf") }
-    }
-}
-
-impl Positon {
-    fn new(x: u8, y: u8) -> Self {
-        Self { x, y }
-    }
-}
-
-#[derive(Component)]
-struct Board {
-    size: u8,
-    physical_size: f32,
-}
-
-impl Board {
-    fn new(size: u8) -> Self {
-        let physical_size = f32::from(size) * TILE_SIZE + f32::from(size + 1) * TILE_SPACER;
-        Self {
-            size,
-            physical_size,
+            let mut it = tiles.iter_mut().sorted_by(|a, b| {
+                match Ord::cmp(&a.1.y, &b.1.y) {
+                    Ordering::Equal => {
+                        Ord::cmp(&a.1.x, &b.1.x)
+                    }
+                    ordering => ordering,
+                }
+            });
         }
-    }
-
-    fn cell_position_to_physical(&self, pos: u8) -> f32 {
-        let offset = -self.physical_size / 2.0 + 0.5 * TILE_SIZE;
-
-        offset + f32::from(pos) * TILE_SIZE + f32::from(pos + 1) * TILE_SPACER
-    }
-
-    fn size(&self) -> Vec2 {
-        Vec2::new(self.physical_size, self.physical_size)
+        Some(BoardShift::Right) => {
+            dbg!("Right");
+        }
+        Some(BoardShift::Up) => {
+            dbg!("Up");
+        }
+        Some(BoardShift::Down) => {
+            dbg!("Down");
+        }
+        None => (),
     }
 }
+
